@@ -30,6 +30,7 @@ class approxDialect;
 #define GEN_PASS_DEF_TRANSFORMAPPROXPASS
 #define GEN_PASS_DEF_FINALIZEAPPROXPASS
 #define GEN_PASS_DEF_LEGALIZETOSTABLEHLOPASS
+#define GEN_PASS_DEF_INDEXSWITCHTOIFPASS
 #include "approx/Passes/Passes.h.inc"
 
 } // namespace approx

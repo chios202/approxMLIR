@@ -35,7 +35,12 @@ endif()
 
 # StableHLO (required by ApproxMLIR's LegalizeToStablehlo pass)
 set(STABLEHLO_BUILD_EMBEDDED ON CACHE BOOL "" FORCE)
-add_subdirectory(${APPROX_MLIR_DIR}/external-dialects/stablehlo
+# Override with -DSTABLEHLO_DIR=... when Triton's LLVM differs from the one the
+# submodule's StableHLO commit targets.
+if(NOT STABLEHLO_DIR)
+  set(STABLEHLO_DIR "${APPROX_MLIR_DIR}/external-dialects/stablehlo")
+endif()
+add_subdirectory(${STABLEHLO_DIR}
                  ${CMAKE_CURRENT_BINARY_DIR}/stablehlo EXCLUDE_FROM_ALL)
 
 # Build approxMLIR as a subdirectory so we get its dialect + passes

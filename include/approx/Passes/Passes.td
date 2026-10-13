@@ -135,6 +135,23 @@ def FinalizeApproxPass : Pass<"finalize-approx"> {
   let dependentDialects = ["mlir::approx::approxDialect"];
 }
 
+def IndexSwitchToIfPass : Pass<"index-switch-to-if"> {
+  let summary = "Lower scf.index_switch to a chain of scf.if";
+  let description = [{
+    Rewrites `scf.index_switch %idx {case c0 ...} {case c1 ...} {default ...}`
+    into `scf.if (%idx == c0) {...} else { scf.if (%idx == c1) {...} else {...} }`.
+
+    config-approx lowers a decision tree to scf.index_switch. Some host
+    compilers reject it: Triton's TTIR -> TTGIR conversion only legalizes
+    scf.if/for/while. Run this after finalize-approx for such backends.
+  }];
+  let constructor = "mlir::approx::createIndexSwitchToIfPass()";
+  let dependentDialects = [
+    "mlir::scf::SCFDialect",
+    "mlir::arith::ArithDialect"
+  ];
+}
+
 def LegalizeToStablehloPass : Pass<"legalize-to-stablehlo"> {
   let summary = "Lower scf.index_switch to stablehlo.case";
   let description = [{

@@ -6,6 +6,9 @@ set(LIBS
         ${conversion_libs}
         ${extension_libs}
         MLIROptLib
+        MLIRRegisterAllDialects
+        MLIRRegisterAllExtensions
+        MLIRRegisterAllPasses
         MLIRapprox
         MLIRApproxTransforms
         

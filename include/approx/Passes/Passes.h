@@ -30,6 +30,7 @@
 
 namespace mlir {
     class PatternRewriter;
+    class OpPassManager;
     class RewritePatternSet;
     class DominanceInfo;
     namespace approx {
@@ -40,6 +41,14 @@ namespace mlir {
         std::unique_ptr<Pass> createTransformApproxPass();
         std::unique_ptr<Pass> createFinalizeApproxPass();
         std::unique_ptr<Pass> createLegalizeToStablehloPass();
+        std::unique_ptr<Pass> createIndexSwitchToIfPass();
+
+        /// Adds the full ApproxMLIR pipeline for `workload` (ml, triton, cpp)
+        /// to `pm`; see lib/approx/Passes/Pipelines.cpp.
+        void buildApproxPipeline(OpPassManager &pm, llvm::StringRef workload,
+                                 bool legalize = true);
+        /// Registers --approx-pipeline="workload=... legalize=...".
+        void registerApproxPipelines();
    } // namespace approx
 } // namespace mlir
 

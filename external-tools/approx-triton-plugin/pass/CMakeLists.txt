@@ -22,7 +22,7 @@ target_include_directories(ApproxTritonPlugin PRIVATE
     ${MLIR_INCLUDE_DIRS}
     ${APPROX_MLIR_DIR}/include
     ${CMAKE_BINARY_DIR}/approxMLIR/include
-    ${APPROX_MLIR_DIR}/external-dialects/stablehlo
+    ${STABLEHLO_DIR}
     ${CMAKE_BINARY_DIR}/stablehlo
 )
 

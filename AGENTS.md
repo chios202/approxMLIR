@@ -55,15 +55,20 @@ Approximation strategies currently include:
 
 ## Canonical Pipeline
 
-The standard ApproxMLIR pass story is:
+The pass order is defined once, in `lib/approx/Passes/Pipelines.cpp`, and
+registered as `--approx-pipeline="workload=ml|triton|cpp legalize=true|false"`
+(the workload values match `WorkloadType` in the Python runtime):
 
-1. `emit-approx`
-2. `emit-management`
-3. `config-approx`
-4. `transform-approx`
-5. `finalize-approx`
+1. `pre-emit-transform` (no-op unless there is a `convert_to_call` annotation)
+2. `emit-approx`
+3. `emit-management`
+4. `config-approx`
+5. `transform-approx`
+6. `finalize-approx`
+7. host adapter: `legalize-to-stablehlo` (ml), `index-switch-to-if` (triton), none (cpp)
 
-Some flows also use `pre-emit-transform` before `transform-approx`.
+The Python runtime's ML and Triton defaults use this named pipeline
+(`runtime/approx_runtime/core/toolchain.py`).
 
 The high-level expectation is:
 
@@ -188,9 +193,9 @@ Relevant repo locations:
 
 - Triton plugin: `external-tools/approx-triton-plugin`
 - Triton example target: `runtime/examples/example_triton_wo_tuning.py`
-- Triton runtime hook code: `runtime/approx_runtime/triton_hook.py`
-- Triton compiler bridge: `runtime/approx_runtime/triton_compiler.py`
-- Pipeline selection logic: `runtime/approx_runtime/compiler.py`
+- Triton runtime hook code: `runtime/approx_runtime/triton/hook.py`
+- Triton compiler bridge: `runtime/approx_runtime/triton/passes.py`
+- Pipeline selection logic: `runtime/approx_runtime/core/passes.py`
 
 The plugin is loaded with:
 
@@ -200,18 +205,14 @@ The Triton path does not use `approx-opt`; it drives passes through Triton's pas
 
 ## Triton Pass Pipeline
 
-The current Triton plugin registers:
+The Triton plugin registers `approx-triton-pipeline` (the same passes and order
+as `approx-opt --approx-pipeline="workload=triton"`; this is the default), plus each
+pass on its own: `pre-emit-transform`, `emit-approx`, `emit-management`,
+`config-approx`, `transform-approx`, `finalize-approx`, `index-switch-to-if`.
 
-1. `emit-approx`
-2. `emit-management`
-3. `config-approx`
-4. `pre-emit-transform`
-5. `transform-approx`
-6. `finalize-approx`
-
-`legalize-to-stablehlo` is not part of the Triton path.
-
-For `func_substitute`, `pre-emit-transform` may be needed because Triton uses Triton-specific function/call ops and compatibility handling may be required before the generic transformation pass runs.
+`legalize-to-stablehlo` is not part of the Triton path; `index-switch-to-if`
+replaces it, because Triton's TTIR -> TTGIR conversion cannot handle
+`scf.index_switch` with tensor results.
 
 ## Recommended Debug Order For Triton Deployment
 
@@ -422,8 +423,8 @@ For general ApproxMLIR understanding:
 For Triton-specific work:
 
 - `runtime/examples/example_triton_wo_tuning.py`
-- `runtime/approx_runtime/triton_hook.py`
-- `runtime/approx_runtime/triton_compiler.py`
-- `runtime/approx_runtime/compiler.py`
+- `runtime/approx_runtime/triton/hook.py`
+- `runtime/approx_runtime/triton/passes.py`
+- `runtime/approx_runtime/core/passes.py`
 - `external-tools/approx-triton-plugin/README.md`
 - `external-tools/approx-triton-plugin/pass/ApproxTritonPlugin.cpp`

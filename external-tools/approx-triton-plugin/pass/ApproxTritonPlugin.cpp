@@ -3,17 +3,17 @@
 /// Registers approxMLIR's dialect and passes so they can be loaded by Triton
 /// via TRITON_PASS_PLUGIN_PATH.
 ///
-/// Passes (the full approx pipeline minus legalize-to-stablehlo):
-///   1. emit-approx
-///   2. emit-management
-///   3. config-approx
-///   4. pre-emit-transform
-///   5. transform-approx
-///   6. finalize-approx
+/// Entries:
+///   approx-triton-pipeline  the whole pipeline, built by buildApproxPipeline
+///                           (lib/approx/Passes/Pipelines.cpp) for "triton"
+///   pre-emit-transform, emit-approx, emit-management, config-approx,
+///   transform-approx, finalize-approx, index-switch-to-if
+///                           each pass on its own
 ///
 /// Dialect: "approx" (approxDialect) — registered via the dialect plugin API
 /// so Triton's MLIRContext can parse approx.* ops.
 
+#include "mlir/Pass/PassRegistry.h"
 #include "approx/Dialect.h"
 #include "approx/Ops.h"
 #include "approx/Passes/Passes.h"
@@ -36,6 +36,8 @@ constexpr const char *kPassNames[] = {
     "pre-emit-transform",
     "transform-approx",
     "finalize-approx",
+    "index-switch-to-if",
+    "approx-triton-pipeline",
 };
 constexpr uint32_t kNumPasses = sizeof(kPassNames) / sizeof(kPassNames[0]);
 
@@ -53,6 +55,8 @@ std::unique_ptr<mlir::Pass> createPassByName(const char *name) {
     return mlir::approx::createTransformApproxPass();
   if (n == "finalize-approx")
     return mlir::approx::createFinalizeApproxPass();
+  if (n == "index-switch-to-if")
+    return mlir::approx::createIndexSwitchToIfPass();
   return nullptr;
 }
 
@@ -102,6 +106,11 @@ void addFinalizeApproxPass(mlir::PassManager *pm,
   addPassByName(pm, args, "finalize-approx");
 }
 
+void addIndexSwitchToIfPass(mlir::PassManager *pm,
+                            const std::vector<std::string> &args) {
+  addPassByName(pm, args, "index-switch-to-if");
+}
+
 void registerEmitApproxPass() { registerPassByName("emit-approx"); }
 void registerEmitManagementPass() { registerPassByName("emit-management"); }
 void registerConfigApproxPass() { registerPassByName("config-approx"); }
@@ -110,6 +119,25 @@ void registerPreEmitTransformPass() {
 }
 void registerTransformApproxPass() { registerPassByName("transform-approx"); }
 void registerFinalizeApproxPass() { registerPassByName("finalize-approx"); }
+void registerIndexSwitchToIfPass() {
+  registerPassByName("index-switch-to-if");
+}
+
+/// The whole ApproxMLIR pipeline for Triton in one entry (same passes, same
+/// order as `approx-opt --approx-pipeline="workload=triton"`).
+void addApproxTritonPipeline(mlir::PassManager *pm,
+                             const std::vector<std::string> &args) {
+  (void)args;
+  mlir::approx::buildApproxPipeline(*pm, "triton");
+}
+
+void registerApproxTritonPipeline() {
+  mlir::PassPipelineRegistration<>(
+      "approx-triton-pipeline", "Full ApproxMLIR lowering for Triton TTIR",
+      [](mlir::OpPassManager &pm) {
+        mlir::approx::buildApproxPipeline(pm, "triton");
+      });
+}
 
 } // namespace
 
@@ -127,6 +155,10 @@ TRITON_PLUGIN_API mlir::triton::plugin::PluginInfo *tritonGetPluginInfo() {
        registerTransformApproxPass},
       {"finalize-approx", LLVM_VERSION_STRING, addFinalizeApproxPass,
        registerFinalizeApproxPass},
+      {"index-switch-to-if", LLVM_VERSION_STRING, addIndexSwitchToIfPass,
+       registerIndexSwitchToIfPass},
+      {"approx-triton-pipeline", LLVM_VERSION_STRING, addApproxTritonPipeline,
+       registerApproxTritonPipeline},
   };
   static mlir::triton::plugin::DialectInfo dialects[] = {
       {"approx", LLVM_VERSION_STRING, registerApproxDialect},
@@ -141,7 +173,11 @@ TRITON_PLUGIN_API mlir::triton::plugin::PluginInfo *tritonGetPluginInfo() {
       1,
       nullptr,
       0,
+#ifdef TRITON_VERSION
+      // Newer Triton adds a tritonVersion field to PluginInfo; older Triton
+      // (e.g. 3f0a0085a) has no such field and no TRITON_VERSION macro.
       TRITON_VERSION,
+#endif
   };
   return &info;
 }

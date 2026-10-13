@@ -21,7 +21,6 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 #include "approx/Dialect.h"
-#include "approx/approxOpsDialect.cpp.inc"
 #include "approx/Passes/Passes.h"
 
 
@@ -48,6 +47,8 @@ int main(int argc, char **argv) {
   mlir::registerPreEmitTransformationPass();
   mlir::registerFinalizeApproxPass();
   mlir::registerLegalizeToStablehloPass();
+  mlir::registerIndexSwitchToIfPass();
+  mlir::approx::registerApproxPipelines();
 
   mlir::DialectRegistry registry;
   mlir::registerAllExtensions(registry);

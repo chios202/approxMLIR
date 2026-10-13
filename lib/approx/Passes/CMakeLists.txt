@@ -7,6 +7,8 @@ add_mlir_dialect_library(MLIRApproxTransforms
   TransformApprox.cpp
   FinalizeApprox.cpp
   LegalizeToStablehlo.cpp
+  IndexSwitchToIf.cpp
+  Pipelines.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${MLIR_MAIN_INCLUDE_DIR}/mlir/Dialect/Affine
