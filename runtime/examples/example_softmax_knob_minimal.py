@@ -81,8 +81,6 @@ def main():
 
     torch.testing.assert_close(softmax(long_rows), torch.softmax(long_rows, dim=1),
                                rtol=1e-5, atol=1e-6)
-    print("frontend disabled: kernel matches torch.softmax exactly")
-
 
 if __name__ == "__main__":
     main()

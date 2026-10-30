@@ -26,8 +26,16 @@ module {
 
   func.func @approx_my_exp_1(%n: i32, %x: tensor<128xf32>) -> tensor<128xf32> {
     %one = arith.constant dense<1.0> : tensor<128xf32>
-    %r = arith.addf %one, %x : tensor<128xf32>
-    return %r : tensor<128xf32>
+    %half = arith.constant dense<0.5> : tensor<128xf32>
+    %sixth = arith.constant dense<0.166666672> : tensor<128xf32>
+    %x_squared = arith.mulf %x, %x : tensor<128xf32>
+    %x_cubed = arith.mulf %x_squared, %x : tensor<128xf32>
+    %second_order_term = arith.mulf %x_squared, %half : tensor<128xf32>
+    %third_order_term = arith.mulf %x_cubed, %sixth : tensor<128xf32>
+    %first_order_sum = arith.addf %one, %x : tensor<128xf32>
+    %second_order_sum = arith.addf %first_order_sum, %second_order_term : tensor<128xf32>
+    %taylor_order_3 = arith.addf %second_order_sum, %third_order_term : tensor<128xf32>
+    return %taylor_order_3 : tensor<128xf32>
   }
 }
 

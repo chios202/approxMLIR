@@ -26,8 +26,16 @@ module {
 
   func.func @approx_my_exp_1(%n: i32, %x: f32) -> f32 {
     %one = arith.constant 1.0 : f32
-    %r = arith.addf %one, %x : f32
-    return %r : f32
+    %half = arith.constant 0.5 : f32
+    %sixth = arith.constant 0.166666672 : f32
+    %x_squared = arith.mulf %x, %x : f32
+    %x_cubed = arith.mulf %x_squared, %x : f32
+    %second_order_term = arith.mulf %x_squared, %half : f32
+    %third_order_term = arith.mulf %x_cubed, %sixth : f32
+    %first_order_sum = arith.addf %one, %x : f32
+    %second_order_sum = arith.addf %first_order_sum, %second_order_term : f32
+    %taylor_order_3 = arith.addf %second_order_sum, %third_order_term : f32
+    return %taylor_order_3 : f32
   }
 }
 

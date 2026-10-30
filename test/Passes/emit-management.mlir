@@ -25,9 +25,7 @@ module {
         %a = arith.addf %acc, %r : f32
         scf.yield %a : f32
       }
-      %nf = arith.sitofp %n : i32 to f32
-      %mean = arith.divf %sum, %nf : f32
-      approx.yield %mean : f32
+      approx.yield %sum : f32
     }) : (i32, memref<?xf32>, f32) -> f32
     return %0 : f32
   }
@@ -73,9 +71,7 @@ module {
 // CHECK-NEXT:        scf.yield %[[NEW_ACCUMULATOR]] : f32
 // CHECK-NEXT:      }
 
-// CHECK-NEXT:      %[[N_AS_FLOAT:.*]] = arith.sitofp %[[ARG_N]] : i32 to f32
-// CHECK-NEXT:      %[[MEAN:.*]] = arith.divf %[[SUM]], %[[N_AS_FLOAT]] : f32
-// CHECK-NEXT:      approx.yield %[[MEAN]] : f32
+// CHECK-NEXT:      approx.yield %[[SUM]] : f32
 // CHECK-NEXT:    }) : (i32, memref<?xf32>, f32) -> f32
 // CHECK-NEXT:    return %[[KNOB_RESULT]] : f32
 
@@ -102,34 +98,48 @@ module {
 // -----
 
 module {
-  func.func private @recover_impl(%a: f32, %b: f32) -> f32
-  func.func private @checker_impl(%r: f32, %a: f32, %b: f32) -> i1
+  func.func @gaussian_exact(%a: f32, %b: f32) -> f32 {
+    %diff = arith.subf %a, %b : f32
+    %diff_squared = arith.mulf %diff, %diff : f32
+    %negated = arith.negf %diff_squared : f32
+    %result = math.exp %negated : f32
+    return %result : f32
+  }
 
-  "approx.util.annotation.try"() <{func_name = "gauss", recover = "@recover_impl", checker = "@checker_impl"}> : () -> ()
+  func.func @gaussian_in_unit_range(%result: f32, %a: f32, %b: f32) -> i1 {
+    %zero = arith.constant 0.0 : f32
+    %one = arith.constant 1.0 : f32
+    %not_negative = arith.cmpf oge, %result, %zero : f32
+    %at_most_one = arith.cmpf ole, %result, %one : f32
+    %in_range = arith.andi %not_negative, %at_most_one : i1
+    return %in_range : i1
+  }
 
-  func.func @gauss(%a: f32, %b: f32) -> f32 {
+  "approx.util.annotation.try"() <{func_name = "gaussian", recover = "@gaussian_exact", checker = "@gaussian_in_unit_range"}> : () -> ()
+
+  func.func @gaussian(%a: f32, %b: f32) -> f32 {
     %0 = "approx.knob"(%a, %b) <{QoS_in = array<i32>, QoS_out = array<i32>, id = 0 : i32, rf = 0 : i32}> ({
       %d = arith.subf %a, %b : f32
       %sq = arith.mulf %d, %d : f32
-      %e = math.exp %sq : f32
-      %r = arith.addf %e, %a : f32
+      %neg = arith.negf %sq : f32
+      %r = math.exp %neg : f32
       approx.yield %r : f32
     }) : (f32, f32) -> f32
     return %0 : f32
   }
 }
 
-// CHECK-LABEL: func.func @gauss
-// CHECK-SAME:    (%[[ARG_A:.*]]: f32, %[[ARG_B:.*]]: f32)
+// CHECK-LABEL: func.func @gaussian(
+// CHECK-SAME:    %[[ARG_A:.*]]: f32, %[[ARG_B:.*]]: f32)
 // CHECK:         "approx.knob"(%[[ARG_A]], %[[ARG_B]])
 // CHECK-NEXT:      %[[DIFF:.*]] = arith.subf %[[ARG_A]], %[[ARG_B]] : f32
 // CHECK-NEXT:      %[[DIFF_SQUARED:.*]] = arith.mulf %[[DIFF]], %[[DIFF]] : f32
-// CHECK-NEXT:      %[[EXP:.*]] = math.exp %[[DIFF_SQUARED]] : f32
-// CHECK-NEXT:      %[[RESULT:.*]] = arith.addf %[[EXP]], %[[ARG_A]] : f32
+// CHECK-NEXT:      %[[NEGATED:.*]] = arith.negf %[[DIFF_SQUARED]] : f32
+// CHECK-NEXT:      %[[RESULT:.*]] = math.exp %[[NEGATED]] : f32
 
-// CHECK-NEXT:      "approx.try"(%[[ARG_A]], %[[ARG_B]]) <{recover = "recover_impl"}>
+// CHECK-NEXT:      "approx.try"(%[[ARG_A]], %[[ARG_B]]) <{recover = "gaussian_exact"}>
 // CHECK-NEXT:      ^bb0(%[[CHECK_ARG_A:.*]]: f32, %[[CHECK_ARG_B:.*]]: f32):
-// CHECK-NEXT:        %[[CHECK_PASSED:.*]] = func.call @checker_impl(%[[RESULT]], %[[CHECK_ARG_A]], %[[CHECK_ARG_B]])
+// CHECK-NEXT:        %[[CHECK_PASSED:.*]] = func.call @gaussian_in_unit_range(%[[RESULT]], %[[CHECK_ARG_A]], %[[CHECK_ARG_B]])
 // CHECK-NEXT:        approx.yield %[[CHECK_PASSED]] : i1
 // CHECK-NEXT:      }) : (f32, f32) -> ()
 

@@ -1,31 +1,4 @@
-"""Fused softmax kernel whose exp is an approximation knob.
-
-`softmax_kernel` computes softmax along each row of a 2D tensor (the standard
-fused pattern from Triton's softmax tutorial, reduced to one program per row). For the exp
-it calls `softmax_exp`, a @triton.jit function with a @Knob: a decision tree
-that picks one of nine exp versions at runtime, from the row length
-(by default: exact below 512 columns, minimax2 from 512 columns on). With
-ar.enable_triton_approx() on, ApproxMLIR replaces that one call inside the
-fused kernel; the rest of the kernel is unchanged. To use other versions, change
-the tree's `decisions` / `thresholds` (or let ar.tune_triton search them).
-
-All polynomial variants use the same range reduction:
-    exp(x) = 2^i * 2^f,  i = floor(x * log2(e)),  f in [0, 1)
-and differ only in how 2^f is approximated. Max relative errors of 2^f come
-from examples/exp_minimax.sollya (run it with Sollya to regenerate the coefficients):
-
-    version 0: tl.exp (exact, hardware ex2.approx)
-    version 1-3: Taylor series of 2^f = e^(f ln2), degree 1/2/3    15.3%  3.33%  0.556%
-    version 4-6: float32 minimax (Sollya fpminimax), degree 1/2/3   2.98%  0.172% 0.0075%
-    version 7:   least-squares degree 3 with p(0)=1, p(1)=2         ~0.014%
-    version 8:   Schraudolph's bit trick (no polynomial)            ~5.6%
-    version 9-10: minimax degree 4/5                          2.6e-4%  7.6e-6%
-                 (degree 5 is MORE accurate than the hardware ex2.approx)
-
-Used by: examples/example_triton_softmax.py, tests/test_triton_frontend.py.
-"""
-
-import approx_runtime as ar  # before triton: puts the plugin on TRITON_PLUGIN_PATHS
+import approx_runtime as ar  
 
 import torch
 import triton
@@ -33,7 +6,7 @@ import triton.language as tl
 
 LOG2_E = tl.constexpr(1.4426950408889634)
 LN_2 = tl.constexpr(0.6931471805599453)
-MIN_INPUT = tl.constexpr(-87.0)  # below this, 2^i is no longer a normal float32
+MIN_INPUT = tl.constexpr(-87.0) 
 
 
 @triton.jit
@@ -121,10 +94,6 @@ def exp_schraudolph(x):
     return bits.to(tl.float32, bitcast=True)
 
 
-# func_substitute redirects the call to softmax_exp(x, n) to a version without
-# changing its arguments, so every version must take the same (x, n). These
-# wrappers give the exp_*(x) functions above that signature; n is unused.
-
 @triton.jit
 def _taylor1(x, n):
     return exp_taylor1(x)
@@ -174,8 +143,6 @@ def _minimax4(x, n):
 def _minimax5(x, n):
     return exp_minimax5(x)
 
-
-# Knob value (a decision in the tree) -> name of the exp version, for printing results.
 VERSION_NAMES = {0: "exact", 1: "taylor1", 2: "taylor2", 3: "taylor3", 4: "minimax1",
                  5: "minimax2", 6: "minimax3", 7: "lsq3", 8: "schraudolph",
                  9: "minimax4", 10: "minimax5"}
@@ -196,7 +163,6 @@ def row_length(n):
     approx_kernels={1: _taylor1, 2: _taylor2, 3: _taylor3, 4: _minimax1,
                     5: _minimax2, 6: _minimax3, 7: _lsq3, 8: _schraudolph,
                     9: _minimax4, 10: _minimax5},
-    # Search space for ar.tune:
     thresholds_lower=[0],
     thresholds_upper=[8192],
     decision_values=list(VERSION_NAMES),

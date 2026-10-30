@@ -26,8 +26,16 @@ module {
 
   func.func @approx_my_exp_1(%n: tensor<i32>, %x: tensor<f32>) -> tensor<f32> {
     %one = stablehlo.constant dense<1.0> : tensor<f32>
-    %r = stablehlo.add %one, %x : tensor<f32>
-    return %r : tensor<f32>
+    %half = stablehlo.constant dense<0.5> : tensor<f32>
+    %sixth = stablehlo.constant dense<0.166666672> : tensor<f32>
+    %x_squared = stablehlo.multiply %x, %x : tensor<f32>
+    %x_cubed = stablehlo.multiply %x_squared, %x : tensor<f32>
+    %second_order_term = stablehlo.multiply %x_squared, %half : tensor<f32>
+    %third_order_term = stablehlo.multiply %x_cubed, %sixth : tensor<f32>
+    %first_order_sum = stablehlo.add %one, %x : tensor<f32>
+    %second_order_sum = stablehlo.add %first_order_sum, %second_order_term : tensor<f32>
+    %taylor_order_3 = stablehlo.add %second_order_sum, %third_order_term : tensor<f32>
+    return %taylor_order_3 : tensor<f32>
   }
 }
 

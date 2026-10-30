@@ -83,6 +83,45 @@ import approx_runtime as ar
 compiled = ar.compile(mlir_text, workload=ar.WorkloadType.CPP)
 ```
 
+### Triton: `@ar.Knob` on device functions
+
+Put `@ar.Knob` on a `@triton.jit` device function; kernels that call it get the
+approximation substituted inside the fused kernel. Needs the Triton plugin
+(`libApproxTritonPlugin.so`); set its path before Python starts:
+
+```bash
+export TRITON_PASS_PLUGIN_PATH=/path/to/libApproxTritonPlugin.so
+```
+
+```python
+import approx_runtime as ar   # import before triton
+import triton, triton.language as tl
+
+@triton.jit
+def exp_fast(x):              # same arguments and return type as the exact version
+    ...
+
+@ar.Knob(static_transform=ar.StaticTransform("func_substitute", 1, approx_kernel=exp_fast))
+@triton.jit
+def softmax_exp(x):
+    return tl.exp(x)
+
+ar.enable_triton_approx()     # every kernel compiled from now on calls exp_fast instead
+softmax_kernel[grid](...)     # softmax_kernel calls softmax_exp(...)
+ar.disable_triton_approx()
+```
+
+- `DecisionTree` works too: the state function must be a `@triton.jit` function
+  returning a scalar `int32`, and `state_indices` refer to the device function's
+  arguments (so pass it a scalar such as the row length).
+- `enable_triton_approx(dump_directory=...)` writes the annotated and transformed TTIR.
+- `SafetyContract` works too: the checker receives (result, arguments...) for a whole
+  block and must return one bool for the block (reduce with `tl.sum` / `tl.min` first);
+  one failing block recomputes via the recover function.
+- Full example: `examples/example_triton_softmax.py`; tests: `tests/test_triton_frontend.py`.
+
+### Triton: whole-kernel substitution hook (older API)
+
 Triton plugin path (no `approx-opt`):
 
 ```python
@@ -99,7 +138,8 @@ hook = ar.make_triton_stages_hook(
 ```
 
 Notes:
-- For `func_substitute`, the hook auto-adds `pre-emit-transform` if needed.
+- For `func_substitute` with an explicit pass list, the hook auto-adds `pre-emit-transform` if needed
+  (the named `approx-triton-pipeline` already runs it).
 - Provide explicit `approx_<func>_<knob>` TTIR via `extra_ttir_texts` to demonstrate a real substitution.
 - If explicit `approx_<func>_<knob>` is missing, the hook falls back to cloning `tt.func @<func>` (semantic no-op).
 
@@ -264,12 +304,23 @@ print(f"Best accuracy: {result['best_accuracy']:.4f}")
 tuned_mlir = result['best_mlir']
 ```
 
-### JAX and C++ Helpers
+### JAX, C++ and Triton Helpers
 
 ```python
 result = ar.tune_jax(my_kernel, example_args, config, evaluate_fn)
 result = ar.tune_cpp(cpp_source, base_mlir, evaluate_fn)
+
+ar.enable_triton_approx()
+result = ar.tune_triton(softmax_exp, evaluate_fn)   # softmax_exp: a @Knob Triton function
 ```
+
+For Triton there is no MLIR text to edit: the annotations are generated inside
+Triton's compile from the Python `DecisionTree`. Each round, `tune_triton`
+writes the values into the tree (`apply_config_to_tree`), then calls
+`evaluate_fn(config)`, which launches the kernel and returns
+`(time_ms, accuracy)`. The tree is part of the frontend's cache key, so every
+launch recompiles. The tree is restored afterwards; apply
+`result["best_config"]` with `ar.apply_config_to_tree(tree, "softmax_exp", ...)`.
 
 ### Tuning API Reference
 
@@ -389,6 +440,7 @@ Command-line options include:
 ### Examples
 
 - `examples/example_w_tuning.py` (JAX tuning)
+- `examples/example_triton_softmax_tuning.py` (Triton tuning, prints the Pareto frontier; needs a GPU)
 - `examples/example_triton_wo_tuning.py` (Triton plugin pass-manager path)
 - `examples/benchmark/example_lavamd_tuning.py` (C++ tuning via cgeist)
 - `examples/benchmark/example_bm25_tuning.py` (C++ tuning via cgeist)
@@ -402,15 +454,26 @@ unannotated inputs in `tools/cgeist/Test/approxMLIR/` with `@approx` comments ad
 
 ## Pass Pipeline
 
-ML:
+The pass order is defined once, in C++ (`lib/approx/Passes/Pipelines.cpp`):
+
 ```
-emit-approx → emit-management → config-approx → transform-approx → finalize-approx → legalize-to-stablehlo
+pre-emit-transform → emit-approx → emit-management → config-approx → transform-approx → finalize-approx → <host adapter>
 ```
 
-CPP:
-```
-emit-approx → emit-management → config-approx → transform-approx → finalize-approx
-```
+The workload type (same values as `WorkloadType`) picks the host adapter, which makes the decision tree's `scf.index_switch` legal for that workload's host compiler:
+
+| Workload | Run with | Host adapter pass |
+|---------|----------|--------------|
+| `ml` (JAX → StableHLO → IREE) | `approx-opt --approx-pipeline="workload=ml"` | `legalize-to-stablehlo` (`scf.index_switch` → `stablehlo.case`) |
+| `triton` | `approx-opt --approx-pipeline="workload=triton"`, or the plugin entry `approx-triton-pipeline` | `index-switch-to-if` (`scf.index_switch` → `scf.if` chain) |
+| `cpp` (Polygeist) | `approx-opt --approx-pipeline="workload=cpp"` | none |
+
+`legalize=false` skips the host adapter (used for SafetyContract, whose `scf.if` the
+StableHLO legalization does not handle). The Python defaults
+(`ToolchainConfig.ml_pipeline`, `.triton_pipeline`) are these named pipelines.
+`cpp_pipeline` stays an explicit pass list because `polygeist-opt` is built
+outside this repo. An explicit pass list still works anywhere a pipeline is
+accepted, and `pre-emit-transform` is prepended to it for `func_substitute`.
 
 ## Environment Variables
 

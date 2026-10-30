@@ -40,7 +40,17 @@ func.func @__internal_my_exp(%x: f32) -> f32 {
   return %0 : f32
 }
 func.func @approx_my_exp_2(%x: f32) -> f32 {
-  return %x : f32
+  %one = arith.constant 1.0 : f32
+  %half = arith.constant 0.5 : f32
+  %sixth = arith.constant 0.166666672 : f32
+  %x_squared = arith.mulf %x, %x : f32
+  %x_cubed = arith.mulf %x_squared, %x : f32
+  %second_order_term = arith.mulf %x_squared, %half : f32
+  %third_order_term = arith.mulf %x_cubed, %sixth : f32
+  %first_order_sum = arith.addf %one, %x : f32
+  %second_order_sum = arith.addf %first_order_sum, %second_order_term : f32
+  %taylor_order_3 = arith.addf %second_order_sum, %third_order_term : f32
+  return %taylor_order_3 : f32
 }
 func.func @my_exp(%x: f32) -> f32 {
   %r = "approx.knob"(%x) <{QoS_in = array<i32>, QoS_out = array<i32>, id = 0 : i32, rf = 0 : i32}> ({
@@ -57,7 +67,17 @@ func.func @my_exp(%x: f32) -> f32 {
 // CHECK-NEXT:      return %[[EXP]] : f32
 // CHECK-NEXT:    }
 // CHECK-NEXT:    func.func @approx_my_exp_2(%[[APPROX_ARG:.*]]: f32) -> f32 {
-// CHECK-NEXT:      return %[[APPROX_ARG]] : f32
+// CHECK-NEXT:      %[[ONE:.*]] = arith.constant 1.000000e+00 : f32
+// CHECK-NEXT:      %[[HALF:.*]] = arith.constant 5.000000e-01 : f32
+// CHECK-NEXT:      %[[SIXTH:.*]] = arith.constant 0.166666672 : f32
+// CHECK-NEXT:      %[[X_SQUARED:.*]] = arith.mulf %[[APPROX_ARG]], %[[APPROX_ARG]] : f32
+// CHECK-NEXT:      %[[X_CUBED:.*]] = arith.mulf %[[X_SQUARED]], %[[APPROX_ARG]] : f32
+// CHECK-NEXT:      %[[SECOND_ORDER_TERM:.*]] = arith.mulf %[[X_SQUARED]], %[[HALF]] : f32
+// CHECK-NEXT:      %[[THIRD_ORDER_TERM:.*]] = arith.mulf %[[X_CUBED]], %[[SIXTH]] : f32
+// CHECK-NEXT:      %[[FIRST_ORDER_SUM:.*]] = arith.addf %[[APPROX_ARG]], %[[ONE]] : f32
+// CHECK-NEXT:      %[[SECOND_ORDER_SUM:.*]] = arith.addf %[[FIRST_ORDER_SUM]], %[[SECOND_ORDER_TERM]] : f32
+// CHECK-NEXT:      %[[TAYLOR_ORDER_3:.*]] = arith.addf %[[SECOND_ORDER_SUM]], %[[THIRD_ORDER_TERM]] : f32
+// CHECK-NEXT:      return %[[TAYLOR_ORDER_3]] : f32
 // CHECK-NEXT:    }
 // CHECK-NEXT:    func.func @my_exp(%[[ARG_X:.*]]: f32) -> f32 {
 // CHECK-NEXT:      %[[KNOB_RESULT:.*]] = "approx.knob"(%[[ARG_X]]) <{QoS_in = array<i32>, QoS_out = array<i32>, id = 0 : i32, rf = 0 : i32}> ({
