@@ -11,6 +11,7 @@ from approx_runtime import (
     CompilationError,
     get_pipeline_for_config,
     WorkloadType,
+    ToolchainConfig,
     DecisionTree,
     StaticTransform,
 )
@@ -25,28 +26,12 @@ def mock_approx(x):
 
 
 class TestPassPipeline:
-    def test_pipeline_order(self):
-        expected = [
-            "emit-approx",
-            "emit-management",
-            "config-approx",
-            "transform-approx",
-            "finalize-approx",
-            "legalize-to-stablehlo",
-        ]
-        assert PASS_PIPELINE == expected
-    
-    def test_func_substitute_pipeline_order(self):
-        expected = [
-            "pre-emit-transform",
-            "emit-approx",
-            "emit-management",
-            "config-approx",
-            "transform-approx",
-            "finalize-approx",
-            "legalize-to-stablehlo",
-        ]
-        assert FUNC_SUBSTITUTE_PIPELINE == expected
+    def test_default_is_named_jax_pipeline(self):
+        assert PASS_PIPELINE == ["approx-pipeline=workload=ml"]
+
+    def test_func_substitute_pipeline_is_default(self):
+        # The named pipeline already runs pre-emit-transform first.
+        assert FUNC_SUBSTITUTE_PIPELINE == PASS_PIPELINE
 
 
 class TestGetPipelineForConfig:
@@ -115,8 +100,7 @@ class TestCompile:
         
         # Check passes were included
         call_args = mock_run.call_args[0][0]
-        assert '--emit-approx' in call_args
-        assert '--finalize-approx' in call_args
+        assert call_args[2:] == ['--approx-pipeline=workload=ml']
     
     @patch('subprocess.run')
     def test_compile_with_custom_passes(self, mock_run):
@@ -142,10 +126,9 @@ class TestCompile:
         )
         
         compile("module { }", passes=FUNC_SUBSTITUTE_PIPELINE)
-        
+
         call_args = mock_run.call_args[0][0]
-        assert '--pre-emit-transform' in call_args
-        assert '--emit-approx' in call_args
+        assert call_args[2:] == ['--approx-pipeline=workload=ml']
     
     @patch('subprocess.run')
     def test_compile_failure(self, mock_run):
@@ -180,25 +163,42 @@ class TestCompile:
         )
 
         mlir = 'module { "approx.util.annotation.convert_to_call"() <{func_name = "f"}> : () -> () }'
-        compile(mlir, workload=WorkloadType.CPP)
+        compile(mlir, workload=WorkloadType.CPP,
+                toolchain=ToolchainConfig(cpp_pipeline=["emit-approx"]))
 
         call_args = mock_run.call_args[0][0]
-        assert '--pre-emit-transform' in call_args
+        assert call_args[2:] == ['--pre-emit-transform', '--emit-approx']
 
-    @patch('approx_runtime.compiler.compile_with_triton_plugin')
+    @patch('subprocess.run')
+    def test_compile_named_pipeline_not_prefixed_for_convert_to_call(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="output",
+            stderr="",
+        )
+
+        mlir = 'module { "approx.util.annotation.convert_to_call"() <{func_name = "f"}> : () -> () }'
+        compile(mlir, workload=WorkloadType.CPP,
+                toolchain=ToolchainConfig(cpp_pipeline=["approx-pipeline=workload=cpp"]))
+
+        call_args = mock_run.call_args[0][0]
+        assert call_args[2:] == ['--approx-pipeline=workload=cpp']
+
+    @patch('approx_runtime.core.passes.compile_with_triton_plugin')
     def test_compile_triton_dispatch(self, mock_triton_compile):
         mock_triton_compile.return_value = "ttir output"
         result = compile("module { }", workload=WorkloadType.TRITON, passes=["emit-approx"])
         assert result == "ttir output"
         mock_triton_compile.assert_called_once()
 
-    @patch('approx_runtime.compiler.compile_with_triton_plugin')
+    @patch('approx_runtime.core.passes.compile_with_triton_plugin')
     def test_compile_triton_auto_adds_pre_emit(self, mock_triton_compile):
         mock_triton_compile.return_value = "ttir output"
         mlir = 'module { "approx.util.annotation.convert_to_call"() <{func_name = "f"}> : () -> () }'
-        compile(mlir, workload=WorkloadType.TRITON, toolchain=None)
+        compile(mlir, workload=WorkloadType.TRITON,
+                toolchain=ToolchainConfig(triton_pipeline=["emit-approx"]))
         called_passes = mock_triton_compile.call_args.kwargs["passes"]
-        assert called_passes[0] == "pre-emit-transform"
+        assert called_passes == ["pre-emit-transform", "emit-approx"]
 
 
 class TestCompileFile:

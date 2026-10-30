@@ -34,41 +34,8 @@ TUNING_TIME_BUDGET = int(os.environ.get("TUNING_TIME_BUDGET", "300"))  # seconds
 ACCURACY_THRESHOLD = float(os.environ.get("ACCURACY_THRESHOLD", "0.9"))
 
 
-def get_state(n: int) -> int:
-    """Runtime state function - returns n to compare against thresholds."""
-    return n
-
-
-def approx_my_kernel_1(n: int, data: jax.Array) -> jax.Array:
-    """Approximate kernel v1 - skip sin() for speed."""
-    dummy = (n * 0).astype(data.dtype)
-    return data * 2.0 + dummy
-
-
-def approx_my_kernel_2(n: int, data: jax.Array) -> jax.Array:
-    """Approximate kernel v2 - even faster, less accurate."""
-    dummy = (n * 0).astype(data.dtype)
-    return data * 1.9 + dummy
-
-
-@ar.Knob(decision_tree=ar.DecisionTree(
-    state_function=get_state,
-    state_indices=[0],  # First arg is state
-    thresholds=[100, 500],
-    decisions=[0, 1, 2],  # 0=exact, 1=approx_v1, 2=approx_v2
-    transform_type="func_substitute",
-    approx_kernels={
-        1: approx_my_kernel_1,
-        2: approx_my_kernel_2,
-    },
-    # Bounds for auto-tuning
-    thresholds_lower=[0, 100],
-    thresholds_upper=[500, 1000],
-))
-def my_kernel(n: int, data: jax.Array) -> jax.Array:
-    """Main kernel - exact implementation."""
-    dummy = (n * 0).astype(data.dtype)
-    return (data * 2.0 + jnp.sin(data)) + dummy
+# Kernel, its approximations, and its decision tree: kernels/jax_kernels.py
+from kernels.jax_kernels import get_state, approx_my_kernel_1, approx_my_kernel_2, my_kernel
 
 
 def compute_ground_truth(data: np.ndarray) -> np.ndarray:

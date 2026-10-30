@@ -1,21 +1,3 @@
-"""Triton TTIR dump hook.
-
-Observe-only counterpart to :mod:`triton_hook`. Installs itself via the same
-``add_stages_inspection_hook`` entry point, but never modifies the module — it
-just writes each compiled kernel's TTIR plus correlation metadata to disk so
-the kernels can later be mapped back to the model layer they came from.
-
-Per-kernel output layout::
-
-    <out_dir>/<func_name>__<shape_hash>.ttir
-    <out_dir>/<func_name>__<shape_hash>.json
-
-The ``.json`` sidecar carries ``func_name``, ``kernel_id``, ``shape_hash``,
-``signature`` (raw ``tt.func`` header), parsed ``args`` (shape + dtype per
-argument), Triton ``metadata`` / ``options`` (best-effort serialised),
-``call_count``, ``source`` tag, and timestamps.
-"""
-
 from __future__ import annotations
 
 import hashlib

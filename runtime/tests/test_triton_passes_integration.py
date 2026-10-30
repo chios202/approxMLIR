@@ -1,5 +1,6 @@
 """Integration tests for Triton plugin passes on tt.* IR."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,9 @@ import approx_runtime as ar
 
 
 def _default_plugin_path() -> str:
+    env_path = os.environ.get("TRITON_PASS_PLUGIN_PATH")
+    if env_path:
+        return env_path
     repo_root = Path(__file__).resolve().parents[3]
     return str(
         repo_root / "approx-triton-plugin" / "build" / "lib" / "libApproxTritonPlugin.so"
@@ -65,3 +69,29 @@ module {
         plugin_path=plugin_path,
     )
     assert "tt.call @approx_foo_1" in out
+
+
+def test_approx_triton_pipeline_substitutes_and_removes_approx_ops():
+    plugin_path = _plugin_path_or_skip()
+    mlir = """
+module {
+  "approx.util.annotation.convert_to_call"() <{func_name = "foo"}> : () -> ()
+  "approx.util.annotation.knob"() <{func_name = "foo"}> : () -> ()
+  "approx.util.annotation.transform"() <{func_name = "foo", knob_val = 1 : i32, transform_type = "func_substitute"}> : () -> ()
+  tt.func @approx_foo_1(%x: i32) -> i32 {
+    %c1 = arith.constant 1 : i32
+    %0 = arith.addi %x, %c1 : i32
+    tt.return %0 : i32
+  }
+  tt.func @foo(%x: i32) -> i32 {
+    tt.return %x : i32
+  }
+}
+"""
+    out = ar.compile_with_triton_plugin(
+        mlir,
+        passes=["approx-triton-pipeline"],
+        plugin_path=plugin_path,
+    )
+    assert "tt.call @approx_foo_1" in out
+    assert "approx." not in out

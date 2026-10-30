@@ -1,8 +1,8 @@
-"""Tests for cpp_annotation.py - C++ comment parsing and MLIR generation."""
+"""Tests for cpp/annotations.py - C++ comment parsing and MLIR generation."""
 
 import pytest
 
-from approx_runtime.cpp_annotation import (
+from approx_runtime.cpp.annotations import (
     AnnotationSyntaxError,
     parse_cpp_annotations,
     generate_cpp_annotation_mlir,

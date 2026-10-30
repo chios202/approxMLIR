@@ -17,8 +17,8 @@ from unittest.mock import Mock, MagicMock, patch
 import tempfile
 import os
 
-from approx_runtime.tuner_config import MLIRConfigManager, TunableParam
-from approx_runtime.tuner import ApproxTunerInterface, tune, create_tuner_arg_parser
+from approx_runtime.tuning.params import MLIRConfigManager, TunableParam
+from approx_runtime.tuning.tuner import ApproxTunerInterface, tune, create_tuner_arg_parser
 
 try:
     import opentuner  # noqa: F401
@@ -609,3 +609,21 @@ class TestErrorHandling:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ============================================================================
+# apply_config_to_tree (Triton tuning writes values into the Python tree)
+# ============================================================================
+
+def test_apply_config_to_tree_maps_names_to_indices():
+    from approx_runtime import DecisionTree, apply_config_to_tree
+
+    tree = DecisionTree(state_function=lambda n: n, state_indices=[0], thresholds=[100, 500],
+                        decisions=[1, 2, 4], transform_type="loop_perforate")
+    apply_config_to_tree(tree, "my_func", {
+        "my_func_threshold_1": 700,
+        "my_func_decision_0": 3,
+        "other_func_decision_0": 9,
+    })
+    assert tree.thresholds == [100, 700]
+    assert tree.decisions == [3, 2, 4]

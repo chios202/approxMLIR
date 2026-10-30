@@ -1,4 +1,21 @@
-"""Triton stages hook integration for ApproxMLIR pass plugins."""
+"""Run ApproxMLIR passes inside Triton's compiler at the TTIR stage.
+
+Triton compiles a kernel internally at launch (Python -> TTIR -> TTGIR -> LLVM
+IR -> GPU code), so ApproxMLIR cannot run on exported text as in the JAX path.
+Instead ``make_triton_stages_hook(...)`` returns a callback for
+``triton.knobs.runtime.add_stages_inspection_hook`` that wraps the TTIR stage:
+
+1. let Triton build the TTIR (``make_ttir``, which also inlines device functions),
+2. inject annotations for ``func_name`` (``core/annotations.py``) and merge in
+   extra TTIR functions such as ``approx_<func>_<k>`` (``extra_ttir_texts``),
+3. strip locations, fix public/private visibility, re-parse in Triton's context,
+4. run the plugin passes (from libApproxTritonPlugin.so) on the module.
+
+Current limits: one target function named by hand, approximate kernels compiled
+and passed in by hand, and it runs after inlining, so only whole kernels can be
+substituted. For @Knob on device functions inside a kernel use
+``triton/frontend.py`` (``ar.enable_triton_approx()``) instead.
+"""
 
 from __future__ import annotations
 
@@ -10,9 +27,9 @@ import tempfile
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from .mlir_gen import inject_annotations, needs_pre_emit_transform
-from .toolchain import WorkloadType, get_toolchain
-from .triton_compiler import TritonCompilationError
+from ..core.annotations import inject_annotations, needs_pre_emit_transform
+from ..core.toolchain import WorkloadType, get_toolchain, with_pre_emit_transform
+from .passes import TritonCompilationError
 
 __all__ = [
     "make_triton_stages_hook",
@@ -221,15 +238,10 @@ def make_triton_stages_hook(
             mod = self.make_ttir(mod, metadata, opt, cap)
             original_context = getattr(mod, "context", None)
             target_func_name = None
-            configured_passes = list(passes or get_toolchain().get_pipeline(
-                WorkloadType.TRITON, config
-            ))
-            if (
-                config
-                and needs_pre_emit_transform(config)
-                and "pre-emit-transform" not in configured_passes
-            ):
-                configured_passes = ["pre-emit-transform"] + configured_passes
+            configured_passes = with_pre_emit_transform(
+                passes or get_toolchain().get_pipeline(WorkloadType.TRITON, config),
+                bool(config) and needs_pre_emit_transform(config),
+            )
             selected_plugin = (
                 plugin_path
                 or get_toolchain().triton_plugin_path

@@ -65,12 +65,25 @@ def needs_pre_emit_transform(config: dict) -> bool:
     return False
 
 
-def generate_annotations(func_name: str, config: dict) -> str:
+def generate_annotations(
+    func_name: str,
+    config: dict,
+    state_function_name: Optional[str] = None,
+    checker_name: Optional[str] = None,
+    recover_name: Optional[str] = None,
+) -> str:
     """Generate approx.util.annotation.* ops as MLIR text.
     
     Args:
         func_name: Name of the function to annotate
         config: Approximation config from @Knob decorator
+        state_function_name: Symbol of the decision tree's state function in
+            the module. Defaults to ``state_function.__name__``; frontends that
+            rename functions (Triton mangles them by argument types) pass the
+            real symbol here.
+        checker_name: Symbol of the safety contract's checker function;
+            same default and purpose as ``state_function_name``.
+        recover_name: Symbol of the safety contract's recover function.
     
     Returns:
         MLIR text containing annotation ops
@@ -101,7 +114,7 @@ def generate_annotations(func_name: str, config: dict) -> str:
     func_name = "{func_name}",
     transform_type = "{dt.transform_type}",
     state_indices = array<i64: {state_indices_str}>,
-    state_function = "{dt.state_function.__name__}",
+    state_function = "{state_function_name or dt.state_function.__name__}",
     num_thresholds = {len(dt.thresholds)} : i32,
     thresholds_uppers = array<i32: {thresholds_upper_str}>,
     thresholds_lowers = array<i32: {thresholds_lower_str}>,
@@ -122,13 +135,10 @@ def generate_annotations(func_name: str, config: dict) -> str:
 
     # Safety contract annotation
     if sc:
-        checker_name = sc.checker.__name__
-        recover_name = sc.recover.__name__
-        
         ops.append(f'''  "approx.util.annotation.try"() <{{
     func_name = "{func_name}",
-    recover = "{recover_name}",
-    checker = "{checker_name}"
+    recover = "{recover_name or sc.recover.__name__}",
+    checker = "{checker_name or sc.checker.__name__}"
   }}> : () -> ()''')
     
     # Static transform annotation
@@ -142,13 +152,21 @@ def generate_annotations(func_name: str, config: dict) -> str:
     return '\n'.join(ops)
 
 
-def inject_annotations(mlir_text: str, func_name: str, config: dict) -> str:
+def inject_annotations(
+    mlir_text: str,
+    func_name: str,
+    config: dict,
+    state_function_name: Optional[str] = None,
+    checker_name: Optional[str] = None,
+    recover_name: Optional[str] = None,
+) -> str:
     """Insert annotation ops at the start of the MLIR module.
     
     Args:
         mlir_text: Original MLIR module text
         func_name: Name of the function to annotate
         config: Approximation config from @Knob decorator
+        state_function_name: See ``generate_annotations``.
     
     Returns:
         MLIR text with annotations inserted after 'module ... {'
@@ -156,7 +174,8 @@ def inject_annotations(mlir_text: str, func_name: str, config: dict) -> str:
     if not config:
         return mlir_text
     
-    annotations = generate_annotations(func_name, config)
+    annotations = generate_annotations(func_name, config, state_function_name,
+                                       checker_name, recover_name)
     if not annotations:
         return mlir_text
     

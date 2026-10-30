@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from approx_runtime.cpp_pipeline import CgeistConfig, compile_cpp_source
-from approx_runtime.toolchain import ToolchainConfig
+from approx_runtime.cpp.pipeline import CgeistConfig, compile_cpp_source
+from approx_runtime.core.toolchain import ToolchainConfig
 
 
 def test_compile_cpp_source_calls_cgeist_and_approx_opt():

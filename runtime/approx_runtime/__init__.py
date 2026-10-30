@@ -1,4 +1,3 @@
-"""approx-runtime: Python interface for ApproxMLIR compiler toolchain."""
 
 import os as _os
 
@@ -11,15 +10,16 @@ if _plugin_path:
         _paths.insert(0, _plugin_path)
         _os.environ["TRITON_PLUGIN_PATHS"] = ":".join(p for p in _paths if p)
 
-from .knob import (
+from .core.knob import (
     DecisionTree,
     SafetyContract, 
     StaticTransform,
     Knob,
     get_config,
+    knobbed_functions,
 )
 
-from .mlir_gen import (
+from .core.annotations import (
     generate_annotations,
     inject_annotations,
     inject_annotations_text,
@@ -27,7 +27,7 @@ from .mlir_gen import (
     needs_pre_emit_transform,
 )
 
-from .compiler import (
+from .core.passes import (
     compile,
     compile_file,
     PASS_PIPELINE,
@@ -37,28 +37,34 @@ from .compiler import (
     WorkloadType,
     ToolchainConfig,
 )
-from .triton_compiler import (
+from .triton.passes import (
     TRITON_AVAILABLE,
     TritonCompilationError,
     compile_with_triton_plugin,
 )
-from .triton_hook import (
+from .triton.hook import (
     make_triton_stages_hook,
 )
-from .triton_dump import (
+from .triton.frontend import (
+    enable_triton_approx,
+    disable_triton_approx,
+    is_triton_approx_enabled,
+    approx_ttir,
+)
+from .triton.debug import (
     make_triton_dump_hook,
     make_launch_recorder,
     LaunchRecorder,
 )
 
-from .export import (
+from .jax.export import (
     export_to_mlir,
     export_module,
     get_function_name,
     JAX_AVAILABLE,
 )
 
-from .iree import (
+from .jax.iree import (
     compile_to_iree,
     load_module,
     IREE_AVAILABLE,
@@ -66,25 +72,27 @@ from .iree import (
 
 # Auto-tuning support (requires: pip install opentuner)
 
-from .tuner_config import (
+from .tuning.params import (
     TunableParam,
     MLIRConfigManager,
 )
 
-from .tuner import (
+from .tuning.tuner import (
     ApproxTunerInterface,
     tune,
     create_tuner_arg_parser,
     tune_jax,
     tune_cpp,
+    tune_triton,
+    apply_config_to_tree,
 )
 
-from .toolchain import (
+from .core.toolchain import (
     get_toolchain,
     set_toolchain,
 )
 
-from .cpp_annotation import (
+from .cpp.annotations import (
     CppAnnotation,
     AnnotationSyntaxError,
     parse_cpp_annotations,
@@ -92,12 +100,12 @@ from .cpp_annotation import (
     parse_and_generate,
 )
 
-from .cpp_pipeline import (
+from .cpp.pipeline import (
     CgeistConfig,
     compile_cpp_source,
 )
 
-from .annotate import (
+from .jax.api import (
     with_config,
     export_with_config,
     export_module_with_configs,
@@ -131,6 +139,11 @@ __all__ = [
     'TritonCompilationError',
     'compile_with_triton_plugin',
     'make_triton_stages_hook',
+    'enable_triton_approx',
+    'disable_triton_approx',
+    'is_triton_approx_enabled',
+    'approx_ttir',
+    'knobbed_functions',
     'make_triton_dump_hook',
     'make_launch_recorder',
     'LaunchRecorder',
@@ -152,6 +165,8 @@ __all__ = [
     'create_tuner_arg_parser',
     'tune_jax',
     'tune_cpp',
+    'tune_triton',
+    'apply_config_to_tree',
     # Toolchain
     'get_toolchain',
     'set_toolchain',

@@ -1,7 +1,8 @@
 """Tests for toolchain configuration."""
 
-from approx_runtime.toolchain import ToolchainConfig, WorkloadType
-from approx_runtime.knob import DecisionTree
+from approx_runtime.core.toolchain import (
+    ToolchainConfig, WorkloadType, with_pre_emit_transform)
+from approx_runtime.core.knob import DecisionTree
 
 
 def _mock_state(x):
@@ -52,3 +53,24 @@ def test_get_pipeline_triton_uses_triton_pipeline():
     )
     pipeline = tc.get_pipeline(WorkloadType.TRITON, {})
     assert pipeline == ["emit-approx", "finalize-approx"]
+
+
+def test_default_pipelines():
+    tc = ToolchainConfig()
+    assert tc.get_pipeline(WorkloadType.ML) == ["approx-pipeline=workload=ml"]
+    assert tc.get_pipeline(WorkloadType.CPP)[0] == "emit-approx"
+    assert tc.get_pipeline(WorkloadType.TRITON) == ["approx-triton-pipeline"]
+
+
+def test_get_pipeline_safety_contract_disables_legalize_in_named_pipeline():
+    tc = ToolchainConfig()
+    pipeline = tc.get_pipeline(WorkloadType.ML, {"safety_contract": object()})
+    assert pipeline == ["approx-pipeline=workload=ml legalize=false"]
+
+
+def test_with_pre_emit_transform():
+    assert with_pre_emit_transform(["emit-approx"], True) == ["pre-emit-transform", "emit-approx"]
+    assert with_pre_emit_transform(["emit-approx"], False) == ["emit-approx"]
+    assert with_pre_emit_transform(["pre-emit-transform", "emit-approx"], True) == [
+        "pre-emit-transform", "emit-approx"]
+    assert with_pre_emit_transform(["approx-triton-pipeline"], True) == ["approx-triton-pipeline"]

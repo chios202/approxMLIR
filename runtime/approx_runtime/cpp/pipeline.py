@@ -1,4 +1,10 @@
-"""C/C++ pipeline: cgeist -> inject annotations -> approx-opt (CPP)."""
+"""Compile annotated C++ with ApproxMLIR.
+
+``compile_cpp_source``: C++ source -> cgeist (Polygeist) -> MLIR, then the
+``// @approx`` comments in the source become approx annotations
+(cpp/annotations.py), then approx-opt-cpp runs the CPP pipeline
+(the explicit CPP pass list by default, see core/toolchain.py).
+"""
 
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -7,9 +13,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .cpp_annotation import parse_cpp_annotations, generate_cpp_annotation_mlir
-from .mlir_gen import inject_annotations_text
-from .toolchain import WorkloadType, ToolchainConfig, get_toolchain
+from .annotations import parse_cpp_annotations, generate_cpp_annotation_mlir
+from ..core.annotations import inject_annotations_text
+from ..core.toolchain import (
+    WorkloadType, ToolchainConfig, get_toolchain, with_pre_emit_transform)
 
 __all__ = [
     "CgeistConfig",
@@ -84,10 +91,9 @@ def compile_cpp_source(
         if emit == "annotated":
             return annotated
 
-        cpp_passes = toolchain.get_pipeline(WorkloadType.CPP)
-        if any(a.transform_type == "func_substitute" for a in parsed_annotations):
-            if not cpp_passes or cpp_passes[0] != "pre-emit-transform":
-                cpp_passes = ["pre-emit-transform"] + list(cpp_passes)
+        cpp_passes = with_pre_emit_transform(
+            toolchain.get_pipeline(WorkloadType.CPP),
+            any(a.transform_type == "func_substitute" for a in parsed_annotations))
         approx_opt_path = toolchain.get_opt_path(WorkloadType.CPP)
 
         with tempfile.NamedTemporaryFile(

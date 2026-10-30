@@ -1,9 +1,32 @@
-"""Approximation knob decorators and configuration dataclasses."""
+"""Approximation configs and the ``@Knob`` decorator.
+
+Defines *what* approximation a function should get; does not touch any IR:
+
+- ``StaticTransform``: one fixed approximation chosen at compile time
+  (transform_type + knob_val, plus approx_kernel for func_substitute).
+- ``DecisionTree``: approximation level chosen at runtime from
+  ``state_function(args[state_indices])`` compared against ``thresholds``;
+  ``decisions`` gives the knob value per region. Also the tuner's search space.
+- ``SafetyContract``: try-check-recover (``checker`` validates the result,
+  ``recover`` recomputes it when the check fails).
+- ``Knob(...)``: decorator that only stores the configs on the function as
+  ``func._approx_config``; the function itself is unchanged.
+- ``get_config(func)``: reads that config back (``None`` if not decorated).
+
+Frontend-independent: works on plain Python, JAX, and ``@triton.jit`` functions
+(put ``@Knob`` above ``@triton.jit``). The configs are turned into MLIR by
+``core/annotations.py``.
+"""
 
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Any, Dict
 
-__all__ = ['DecisionTree', 'SafetyContract', 'StaticTransform', 'Knob', 'get_config']
+__all__ = ['DecisionTree', 'SafetyContract', 'StaticTransform', 'Knob', 'get_config',
+           'knobbed_functions']
+
+# Every function decorated with @Knob, in decoration order. Frontends that
+# compile lazily (Triton) use it to build cache keys before compilation starts.
+_KNOBBED_FUNCTIONS: List[Callable] = []
 
 
 @dataclass
@@ -127,11 +150,18 @@ def Knob(
             'safety_contract': safety_contract,
             'static_transform': static_transform,
         }
+        if func not in _KNOBBED_FUNCTIONS:
+            _KNOBBED_FUNCTIONS.append(func)
         return func
-    
+
     return decorator
 
 
 def get_config(func: Callable) -> Optional[dict]:
     """Get approximation config attached to a function, or None if not decorated."""
     return getattr(func, '_approx_config', None)
+
+
+def knobbed_functions() -> List[Callable]:
+    """All functions decorated with @Knob so far, in decoration order."""
+    return list(_KNOBBED_FUNCTIONS)

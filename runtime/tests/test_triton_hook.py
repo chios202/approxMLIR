@@ -1,13 +1,21 @@
 """Tests for Triton stage-hook integration."""
 
+import os
 import sys
 import types
 from pathlib import Path
 
 import pytest
 
-from approx_runtime.triton_compiler import TritonCompilationError
-from approx_runtime.triton_hook import make_triton_stages_hook
+from approx_runtime.triton.passes import TritonCompilationError
+from approx_runtime.triton.hook import make_triton_stages_hook
+
+
+@pytest.fixture(autouse=True)
+def _restore_plugin_env(monkeypatch):
+    # The hook sets TRITON_PASS_PLUGIN_PATH to the fake "/tmp/plugin.so";
+    # monkeypatch restores the real value after each test.
+    monkeypatch.setenv("TRITON_PASS_PLUGIN_PATH", os.environ.get("TRITON_PASS_PLUGIN_PATH", ""))
 
 
 def _install_fake_triton(monkeypatch):

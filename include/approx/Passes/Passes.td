@@ -141,9 +141,10 @@ def IndexSwitchToIfPass : Pass<"index-switch-to-if"> {
     Rewrites `scf.index_switch %idx {case c0 ...} {case c1 ...} {default ...}`
     into `scf.if (%idx == c0) {...} else { scf.if (%idx == c1) {...} else {...} }`.
 
-    config-approx lowers a decision tree to scf.index_switch. Some host
-    compilers reject it: Triton's TTIR -> TTGIR conversion only legalizes
-    scf.if/for/while. Run this after finalize-approx for such backends.
+    config-approx lowers a decision tree to scf.index_switch (one case per
+    region of the tree). Triton's TTIR -> TTGIR conversion has no rule for
+    scf.index_switch with tensor results, but handles scf.if. The Triton
+    pipeline (approx-pipeline="workload=triton") runs this after finalize-approx.
   }];
   let constructor = "mlir::approx::createIndexSwitchToIfPass()";
   let dependentDialects = [

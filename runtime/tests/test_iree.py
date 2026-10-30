@@ -1,7 +1,7 @@
 """Tests for iree.py - IREE deployment."""
 
 import pytest
-from approx_runtime.iree import IREE_AVAILABLE
+from approx_runtime.jax.iree import IREE_AVAILABLE
 
 
 @pytest.mark.skipif(not IREE_AVAILABLE, reason="IREE not available")

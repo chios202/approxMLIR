@@ -1,4 +1,16 @@
-"""approx-opt compiler integration."""
+"""Run the ApproxMLIR pass pipeline on MLIR text.
+
+- ``compile(mlir_text, passes=None, workload=...)``: runs the passes and returns
+  the transformed MLIR. For ML/CPP it calls the ``approx-opt`` binary as a
+  subprocess; for TRITON it uses the plugin through ``triton/passes.py``.
+  Adds pre-emit-transform automatically when the input contains func_substitute
+  annotations. ``compile_file`` does the same for files.
+- ``get_pipeline_for_config(config, workload)``: default pipeline for a config
+  (normally the named C++ pipeline, see core/toolchain.py).
+- ``PASS_PIPELINE`` / ``FUNC_SUBSTITUTE_PIPELINE``: the default ML pipeline
+  (identical now: the named pipeline always starts with pre-emit-transform).
+- ``CompilationError``: raised when approx-opt fails.
+"""
 
 import subprocess
 import tempfile
@@ -6,8 +18,8 @@ from typing import List, Optional
 from pathlib import Path
 import warnings
 
-from .toolchain import WorkloadType, ToolchainConfig, get_toolchain
-from .triton_compiler import compile_with_triton_plugin, TritonCompilationError
+from .toolchain import WorkloadType, ToolchainConfig, get_toolchain, with_pre_emit_transform
+from ..triton.passes import compile_with_triton_plugin, TritonCompilationError
 
 __all__ = [
     'compile', 
@@ -25,8 +37,9 @@ __all__ = [
 # Default pass pipeline for full approximation lowering (ML toolchain).
 PASS_PIPELINE = ToolchainConfig().ml_pipeline
 
-# Pipeline when func_substitute is used (needs pre-emit-transform first).
-FUNC_SUBSTITUTE_PIPELINE = ["pre-emit-transform"] + PASS_PIPELINE
+# Pipeline when func_substitute is used. The named pipeline already starts with
+# pre-emit-transform, so this is the same as PASS_PIPELINE (kept for old callers).
+FUNC_SUBSTITUTE_PIPELINE = with_pre_emit_transform(PASS_PIPELINE, needed=True)
 
 
 def get_pipeline_for_config(
@@ -110,9 +123,9 @@ def compile(
             )
         toolchain = toolchain or get_toolchain()
         pipeline = list(passes or toolchain.get_pipeline(workload))
-        if user_passes is None and _needs_pre_emit_transform_from_mlir(mlir_text):
-            if not pipeline or pipeline[0] != "pre-emit-transform":
-                pipeline = ["pre-emit-transform"] + pipeline
+        if user_passes is None:
+            pipeline = with_pre_emit_transform(
+                pipeline, _needs_pre_emit_transform_from_mlir(mlir_text))
         return compile_with_triton_plugin(
             mlir_text,
             passes=pipeline,
@@ -122,9 +135,9 @@ def compile(
     opt_path, passes = _resolve_toolchain(
         passes, approx_opt_path, workload, toolchain
     )
-    if user_passes is None and _needs_pre_emit_transform_from_mlir(mlir_text):
-        if not passes or passes[0] != "pre-emit-transform":
-            passes = ["pre-emit-transform"] + list(passes)
+    if user_passes is None:
+        passes = with_pre_emit_transform(
+            passes, _needs_pre_emit_transform_from_mlir(mlir_text))
     
     with tempfile.NamedTemporaryFile(
         suffix='.mlir', mode='w', delete=False
@@ -174,9 +187,9 @@ def compile_file(
     if workload == WorkloadType.TRITON:
         mlir_text = Path(input_path).read_text(encoding="utf-8")
         pipeline = list(passes or (toolchain or get_toolchain()).get_pipeline(workload))
-        if user_passes is None and pipeline and pipeline[0] != "pre-emit-transform":
-            if _needs_pre_emit_transform_from_mlir(mlir_text):
-                pipeline = ["pre-emit-transform"] + pipeline
+        if user_passes is None:
+            pipeline = with_pre_emit_transform(
+                pipeline, _needs_pre_emit_transform_from_mlir(mlir_text))
         transformed = compile(
             mlir_text,
             passes=pipeline,
@@ -192,13 +205,13 @@ def compile_file(
     opt_path, passes = _resolve_toolchain(
         passes, approx_opt_path, workload, toolchain
     )
-    if user_passes is None and passes and passes[0] != "pre-emit-transform":
+    if user_passes is None:
         try:
             mlir_text = Path(input_path).read_text(encoding="utf-8")
         except OSError:
             mlir_text = ""
-        if mlir_text and _needs_pre_emit_transform_from_mlir(mlir_text):
-            passes = ["pre-emit-transform"] + list(passes)
+        passes = with_pre_emit_transform(
+            passes, bool(mlir_text) and _needs_pre_emit_transform_from_mlir(mlir_text))
     
     cmd = [opt_path, input_path] + [f'--{p}' for p in passes]
     if output_path:

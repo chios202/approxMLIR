@@ -1,4 +1,10 @@
-"""Triton plugin-based pass runner for ApproxMLIR pipelines."""
+"""Run ApproxMLIR passes on TTIR text through the Triton plugin.
+
+``compile_with_triton_plugin(mlir_text, passes)`` parses the text in a Triton
+MLIR context, adds each plugin pass (default: the TRITON toolchain pipeline,
+``approx-triton-pipeline``), runs them, and returns the result. Used without a
+GPU, e.g. by the tests. ``TritonCompilationError`` is raised on failure.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from .toolchain import WorkloadType, get_toolchain
+from ..core.toolchain import WorkloadType, get_toolchain
 
 __all__ = [
     "TRITON_AVAILABLE",

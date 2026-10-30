@@ -1,4 +1,9 @@
-"""JAX function export to MLIR."""
+"""Export JAX functions to StableHLO MLIR text.
+
+``export_to_mlir(func, *args)`` exports one function; ``export_module`` puts
+several into one module, renaming each ``main`` to the given name and
+stripping location info, so annotations can refer to them by name.
+"""
 
 from typing import Callable, Any, List, Tuple, Optional, Dict
 import functools

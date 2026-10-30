@@ -1,11 +1,16 @@
-"""Non-invasive annotation APIs for JAX workflows."""
+"""Attach approximation configs to JAX functions without the @Knob decorator.
+
+- ``with_config(func, ...)``: wrapped copy of `func` carrying a config.
+- ``export_with_config`` / ``export_module_with_configs``: export JAX functions
+  to StableHLO MLIR (jax/export.py) and add the configs' annotations.
+"""
 
 from typing import Callable, Dict, Optional, Tuple, Any
 import functools
 
-from .knob import DecisionTree, SafetyContract, StaticTransform, get_config
+from ..core.knob import DecisionTree, SafetyContract, StaticTransform, get_config
 from .export import export_module, export_to_mlir, get_function_name
-from .mlir_gen import inject_annotations, collect_helper_functions
+from ..core.annotations import inject_annotations, collect_helper_functions
 
 __all__ = [
     "with_config",

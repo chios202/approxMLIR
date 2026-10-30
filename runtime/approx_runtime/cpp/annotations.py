@@ -1,4 +1,9 @@
-"""Parse C/C++ @approx comments and generate MLIR annotation ops."""
+"""Parse ``// @approx`` comments in C++ source into approx annotations.
+
+``parse_cpp_annotations(source)`` finds each annotation comment block and the
+function that follows it; ``generate_cpp_annotation_mlir`` turns the result into
+``approx.util.annotation.*`` ops for cpp/pipeline.py to add to cgeist's MLIR.
+"""
 
 from dataclasses import dataclass, field
 from typing import List, Optional

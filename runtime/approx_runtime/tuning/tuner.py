@@ -47,10 +47,11 @@ import json
 import logging
 from typing import Callable, Dict, Tuple, Optional, Any
 
-from .tuner_config import MLIRConfigManager, TunableParam
-from .annotate import export_with_config
-from .cpp_annotation import parse_and_generate
-from .mlir_gen import inject_annotations_text
+from .params import MLIRConfigManager, TunableParam
+from ..jax.api import export_with_config
+from ..cpp.annotations import parse_and_generate
+from ..core.annotations import generate_annotations, inject_annotations_text
+from ..core.knob import get_config
 
 __all__ = [
     'ApproxTunerInterface',
@@ -58,6 +59,8 @@ __all__ = [
     'create_tuner_arg_parser',
     'tune_jax',
     'tune_cpp',
+    'tune_triton',
+    'apply_config_to_tree',
 ]
 
 log = logging.getLogger("approx_tuner")
@@ -457,3 +460,76 @@ def tune_cpp(
     annotations = parse_and_generate(cpp_source)
     mlir_annotated = inject_annotations_text(mlir_text, annotations)
     return tune(mlir_annotated, evaluate_fn, accuracy_threshold, **kwargs)
+
+
+def apply_config_to_tree(tree, func_name: str, config: Dict[str, int]) -> None:
+    """Write the tuner's values for `func_name` into `tree`, in place.
+
+    The tuner names its parameters after the decision_tree annotation
+    (params.py): ``<func_name>_threshold_i`` is written to ``tree.thresholds[i]``
+    and ``<func_name>_decision_i`` to ``tree.decisions[i]``. Parameters of
+    other functions are ignored.
+    """
+    thresholds, decisions = list(tree.thresholds), list(tree.decisions)
+    for name, value in config.items():
+        prefix, _, index = name.rpartition("_")
+        if prefix == f"{func_name}_threshold":
+            thresholds[int(index)] = value
+        elif prefix == f"{func_name}_decision":
+            decisions[int(index)] = value
+    tree.thresholds, tree.decisions = thresholds, decisions
+
+
+def tune_triton(
+    knob_fn,
+    evaluate_fn: Callable[[Dict[str, int]], Tuple[float, float]],
+    accuracy_threshold: float = 0.9,
+    **kwargs,
+) -> Dict[str, Any]:
+    """Auto-tune the DecisionTree of a @Knob Triton function.
+
+    For Triton there is no MLIR text to edit: the annotations are generated
+    inside Triton's compile from the Python DecisionTree. So each round writes
+    the tuner's values into the tree (apply_config_to_tree), then calls
+    ``evaluate_fn``, which launches the kernel and returns (time_ms, accuracy).
+    The tree is part of the frontend's cache key, so every launch with new
+    values recompiles.
+
+    Args:
+        knob_fn: The @Knob function whose decision tree is tuned
+            (e.g. ``triton_kernels.softmax_exp``).
+        evaluate_fn: (config) -> (time_ms, accuracy). Launch the kernel that
+            calls ``knob_fn``, time it and measure its accuracy; the tree
+            already holds ``config`` when it is called.
+        accuracy_threshold: Minimum acceptable accuracy.
+        **kwargs: Passed to ``tune`` (time_budget, database, ...).
+
+    Returns:
+        The ``tune`` result. The tree is restored to its original values
+        afterwards; apply ``result["best_config"]`` with apply_config_to_tree
+        to use the best one. ``best_mlir`` is the annotation text only.
+
+    Requires enable_triton_approx() to be active, or every round would
+    measure the exact kernel.
+    """
+    from ..triton.frontend import is_triton_approx_enabled
+
+    if not is_triton_approx_enabled():
+        raise RuntimeError("Call enable_triton_approx() before tune_triton()")
+    config = get_config(knob_fn) or get_config(getattr(knob_fn, "fn", None))
+    tree = (config or {}).get("decision_tree")
+    if tree is None:
+        raise ValueError(f"{knob_fn!r} has no @Knob DecisionTree to tune")
+
+    func_name = getattr(knob_fn, "__name__", None) or knob_fn.fn.__name__
+    original = (list(tree.thresholds), list(tree.decisions))
+
+    def evaluate(params: Dict[str, int]) -> Tuple[float, float]:
+        apply_config_to_tree(tree, func_name, params)
+        return evaluate_fn(params)
+
+    try:
+        return tune(generate_annotations(func_name, config), evaluate,
+                    accuracy_threshold, **kwargs)
+    finally:
+        tree.thresholds, tree.decisions = original

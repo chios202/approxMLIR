@@ -1,4 +1,13 @@
-"""IREE compilation and deployment."""
+"""Compile and run transformed StableHLO with IREE.
+
+Last step of the JAX path (JAX -> StableHLO -> approx-opt -> IREE):
+
+- ``compile_to_iree(mlir_text, backend="llvm-cpu" | "cuda", **kwargs)``: compile to
+  an IREE VM flatbuffer (``.vmfb`` bytes) via ``iree.compiler.compile_str``.
+- ``load_module(vmfb, backend)``: load it into the IREE runtime and return the
+  callable module plus the device.
+- ``IREE_AVAILABLE``: whether the optional IREE packages are installed.
+"""
 
 from typing import Optional, Any, Tuple
 
